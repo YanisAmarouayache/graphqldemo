@@ -9,11 +9,11 @@ import {
 
 // Configuration for data generation
 const CONFIG = {
-  UNITS: Number(process.env.SEED_UNITS || 5000),
-  SOLDIERS: Number(process.env.SEED_SOLDIERS || 50000),
-  EQUIPMENT: Number(process.env.SEED_EQUIPMENT || 10000),
-  MISSIONS: Number(process.env.SEED_MISSIONS || 2000),
-  EVENTS: Number(process.env.SEED_EVENTS || 3000),
+  UNITS: Number(process.env.SEED_UNITS || 50000),
+  SOLDIERS: Number(process.env.SEED_SOLDIERS || 500000),
+  EQUIPMENT: Number(process.env.SEED_EQUIPMENT || 100000),
+  MISSIONS: Number(process.env.SEED_MISSIONS || 20000),
+  EVENTS: Number(process.env.SEED_EVENTS || 30000),
   BATCH_SIZE: 1000, // Insert in batches for performance
 };
 

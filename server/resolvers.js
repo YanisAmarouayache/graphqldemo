@@ -114,7 +114,14 @@ export const resolvers = {
 
     equipment: async (_, { id }) => {
       await simulateDelay(2);
-      return equipmentRepository.getEquipmentById(id);
+      if (!USE_DATALOADER) {
+        // NAIVE REST-LIKE APPROACH (The "Before" for your demo)
+        console.log(`[REST-LIKE] Fetching equipment for unit ${unit.id}`);
+        return equipmentRepository.getUnitEquipment(unit.id);
+      }
+
+      // DEEP LOADER APPROACH (The "After")
+      return ctx.loaders.equipmentByUnitId.load(unit.id);
     },
 
     allEquipment: async () => {

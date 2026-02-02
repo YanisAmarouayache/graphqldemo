@@ -37,22 +37,20 @@ export async function testConnection() {
 }
 
 // Query helper with logging
+let queryCount = 0;
+
 export async function query(text, params) {
+  queryCount++; // Increment every time a query hits Postgres
   const start = Date.now();
-  try {
-    const result = await pool.query(text, params);
-    const duration = Date.now() - start;
-    console.log("Executed query", {
-      text: text.substring(0, 50),
-      duration,
-      rows: result.rowCount,
-    });
-    return result;
-  } catch (err) {
-    console.error("Query error:", err.message);
-    throw err;
-  }
+  const result = await pool.query(text, params);
+  console.log(`[Query #${queryCount}] Duration: ${Date.now() - start}ms`);
+  return result;
 }
+
+export const getQueryCount = () => queryCount;
+export const resetQueryCount = () => {
+  queryCount = 0;
+};
 
 // Transaction helper
 export async function withTransaction(callback) {

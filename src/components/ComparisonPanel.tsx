@@ -1,14 +1,14 @@
-import { useMemo, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
-import { apolloClient } from '@/graphql/client';
-import { gql } from 'graphql-tag';
-import { Play, Zap, Database, Activity } from 'lucide-react';
+import { useMemo, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { apolloClient } from "@/graphql/client";
+import { gql } from "graphql-tag";
+import { Play, Zap, Database, Activity } from "lucide-react";
 
-type ComparisonKey = 'simple' | 'dashboard' | 'nplus1';
+type ComparisonKey = "simple" | "dashboard" | "nplus1";
 
 type ComparisonSpec = {
   name: string;
@@ -23,7 +23,7 @@ interface ComparisonResult {
 
 const COMPARISONS: Record<ComparisonKey, ComparisonSpec> = {
   simple: {
-    name: 'Récupération Simple',
+    name: "Récupération Simple",
     graphqlQuery: `query GetUnit {
   unit(id: "UNT-0001") {
     id
@@ -34,10 +34,14 @@ const COMPARISONS: Record<ComparisonKey, ComparisonSpec> = {
     equipment { id name type }
   }
 }`,
-    restEndpoints: ['/api/units/UNT-0001', '/api/units/UNT-0001/soldiers', '/api/units/UNT-0001/equipment'],
+    restEndpoints: [
+      "/api/units/UNT-0001",
+      "/api/units/UNT-0001/soldiers",
+      "/api/units/UNT-0001/equipment",
+    ],
   },
   dashboard: {
-    name: 'Dashboard Complet',
+    name: "Dashboard Complet",
     graphqlQuery: `query GetDashboardFull {
   dashboardStats {
     totalUnits
@@ -63,86 +67,93 @@ const COMPARISONS: Record<ComparisonKey, ComparisonSpec> = {
   }
 }`,
     restEndpoints: [
-      '/api/dashboard/stats',
-      '/api/units?limit=5',
-      '/api/units/UNT-0001/soldiers',
-      '/api/units/UNT-0002/soldiers',
-      '/api/units/UNT-0003/soldiers',
-      '/api/missions?status=IN_PROGRESS',
+      "/api/dashboard/stats",
+      "/api/units?limit=5",
+      "/api/units/UNT-0001/soldiers",
+      "/api/units/UNT-0002/soldiers",
+      "/api/units/UNT-0003/soldiers",
+      "/api/missions?status=IN_PROGRESS",
     ],
   },
   nplus1: {
-    name: 'Problème N+1',
-    graphqlQuery: `query GetUnitsWithRelations {
-  units(first: 5) {
-    edges {
-      node {
-        id
-        name
-        status
-        soldiers {
-          id
-          name
-          rank
-          equipment { id name type }
+    name: "Multi-Level N+1 (The Stress Test)",
+    graphqlQuery: `query GetDeepRelations {
+      units(first: 100) { # Increased to 10 for more impact
+        edges {
+          node {
+            id
+            name
+            # Triggers Soldiers DataLoader (1 Batch Query)
+            soldiers {
+              id
+              name
+              # Triggers Equipment DataLoader (1 Batch Query)
+              equipment { id name }
+            }
+            # Triggers the DEEP LOADER (1 Joined Query)
+            equipment { id name type }
+          }
         }
-        equipment { id name type }
       }
-    }
-  }
-}`,
+    }`,
     restEndpoints: [
-      '/api/units?limit=5',
-      '/api/units/UNT-0001/soldiers',
-      '/api/units/UNT-0001/equipment',
-      '/api/units/UNT-0002/soldiers',
-      '/api/units/UNT-0002/equipment',
-      '/api/units/UNT-0003/soldiers',
-      '/api/units/UNT-0003/equipment',
-      '/api/units/UNT-0004/soldiers',
-      '/api/units/UNT-0004/equipment',
-      '/api/units/UNT-0005/soldiers',
-      '/api/units/UNT-0005/equipment',
+      "/api/units?limit=100",
+      // In a naive REST app, this list grows exponentially:
+      ...Array.from({ length: 100 }, (_, i) => [
+        `/api/units/UNT-000${i + 1}/soldiers`,
+        `/api/units/UNT-000${i + 1}/equipment`,
+        // Imagine if we also had to fetch equipment for EACH soldier...
+        // that would be another 50+ requests!
+      ]).flat(),
     ],
   },
 };
 
 const formatBytes = (bytes: number): string => {
-  if (!Number.isFinite(bytes)) return '-';
+  if (!Number.isFinite(bytes)) return "-";
   if (bytes < 1024) return `${bytes} B`;
   return `${(bytes / 1024).toFixed(1)} KB`;
 };
 
 const formatMs = (ms: number): string => {
-  if (!Number.isFinite(ms)) return '-';
+  if (!Number.isFinite(ms)) return "-";
   return `${ms.toFixed(1)}ms`;
 };
 
 // Positive => GraphQL better (smaller/faster), negative => REST better
 const percentDiff = (graphql: number, rest: number): number => {
-  if (rest === 0 || !Number.isFinite(graphql) || !Number.isFinite(rest)) return 0;
+  if (rest === 0 || !Number.isFinite(graphql) || !Number.isFinite(rest))
+    return 0;
   return Math.round(((rest - graphql) / rest) * 100);
 };
 
 const speedRatioLabel = (graphqlMs: number, restMs: number) => {
-  if (graphqlMs <= 0 || restMs <= 0) return { label: '-', winner: null as 'graphql' | 'rest' | null };
+  if (graphqlMs <= 0 || restMs <= 0)
+    return { label: "-", winner: null as "graphql" | "rest" | null };
 
   const ratio = restMs / graphqlMs;
-  if (ratio >= 1) return { label: `GraphQL est ${ratio.toFixed(1)}x plus rapide`, winner: 'graphql' as const };
-  return { label: `REST est ${(1 / ratio).toFixed(1)}x plus rapide`, winner: 'rest' as const };
+  if (ratio >= 1)
+    return {
+      label: `GraphQL est ${ratio.toFixed(1)}x plus rapide`,
+      winner: "graphql" as const,
+    };
+  return {
+    label: `REST est ${(1 / ratio).toFixed(1)}x plus rapide`,
+    winner: "rest" as const,
+  };
 };
 
-
-const mean = (values: number[]) => (values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0);
+const mean = (values: number[]) =>
+  values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
 
 const getErrorMessage = (e: unknown): string => {
   if (e instanceof Error) return e.message;
-  if (typeof e === 'string') return e;
-  return 'Erreur inconnue';
+  if (typeof e === "string") return e;
+  return "Erreur inconnue";
 };
 
 export const ComparisonPanel = () => {
-  const [activeTab, setActiveTab] = useState<ComparisonKey>('simple');
+  const [activeTab, setActiveTab] = useState<ComparisonKey>("simple");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ComparisonResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -178,7 +189,8 @@ export const ComparisonPanel = () => {
 
         for (const endpoint of comparison.restEndpoints) {
           const response = await fetch(`http://localhost:4000${endpoint}`);
-          if (!response.ok) throw new Error(`REST ${response.status} sur ${endpoint}`);
+          if (!response.ok)
+            throw new Error(`REST ${response.status} sur ${endpoint}`);
           const data: unknown = await response.json();
           restPayload += JSON.stringify(data).length;
         }
@@ -211,14 +223,28 @@ export const ComparisonPanel = () => {
     }
   };
 
-  const speed = result ? speedRatioLabel(result.graphql.duration, result.rest.duration) : null;
-  const timeDiff = result ? percentDiff(result.graphql.duration, result.rest.duration) : 0;
-  const payloadDiff = result ? percentDiff(result.graphql.payloadSize, result.rest.payloadSize) : 0;
-  const restAvgMs = result ? result.rest.duration / Math.max(1, result.rest.requestCount) : 0;
+  const speed = result
+    ? speedRatioLabel(result.graphql.duration, result.rest.duration)
+    : null;
+  const timeDiff = result
+    ? percentDiff(result.graphql.duration, result.rest.duration)
+    : 0;
+  const payloadDiff = result
+    ? percentDiff(result.graphql.payloadSize, result.rest.payloadSize)
+    : 0;
+  const restAvgMs = result
+    ? result.rest.duration / Math.max(1, result.rest.requestCount)
+    : 0;
 
   // Progress: just a visual indicator (not scientific)
   const progressValue = result
-    ? Math.max(0, Math.min(100, (result.rest.duration / Math.max(result.graphql.duration, 1e-6)) * 50))
+    ? Math.max(
+        0,
+        Math.min(
+          100,
+          (result.rest.duration / Math.max(result.graphql.duration, 1e-6)) * 50
+        )
+      )
     : 0;
 
   return (
@@ -231,7 +257,10 @@ export const ComparisonPanel = () => {
       </CardHeader>
 
       <CardContent className="space-y-4">
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as ComparisonKey)}>
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => setActiveTab(v as ComparisonKey)}
+        >
           <TabsList className="grid grid-cols-3">
             <TabsTrigger value="simple">Simple</TabsTrigger>
             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
@@ -245,32 +274,60 @@ export const ComparisonPanel = () => {
             {speed?.winner && (
               <Badge
                 variant="secondary"
-                className={speed.winner === 'graphql' ? 'bg-blue-500/20 text-blue-300' : 'bg-red-500/20 text-red-300'}
+                className={
+                  speed.winner === "graphql"
+                    ? "bg-blue-500/20 text-blue-300"
+                    : "bg-red-500/20 text-red-300"
+                }
               >
-                Gagnant: {speed.winner === 'graphql' ? 'GraphQL' : 'REST'}
+                Gagnant: {speed.winner === "graphql" ? "GraphQL" : "REST"}
               </Badge>
             )}
           </div>
           <p className="text-xs text-muted-foreground">
-            Runs: {runs} | GraphQL: 1 requête | REST: {comparison.restEndpoints.length} requêtes (séquentielles)
+            Runs: {runs} | GraphQL: 1 requête | REST:{" "}
+            {comparison.restEndpoints.length} requêtes (séquentielles)
           </p>
 
           <div className="flex items-center gap-2 pt-2">
             <span className="text-xs text-muted-foreground">Runs</span>
-            <Button variant="secondary" className="h-7 px-2" onClick={() => setRuns(3)} disabled={loading}>
+            <Button
+              variant="secondary"
+              className="h-7 px-2"
+              onClick={() => setRuns(3)}
+              disabled={loading}
+            >
               3
             </Button>
-            <Button variant="secondary" className="h-7 px-2" onClick={() => setRuns(5)} disabled={loading}>
+            <Button
+              variant="secondary"
+              className="h-7 px-2"
+              onClick={() => setRuns(5)}
+              disabled={loading}
+            >
               5
             </Button>
-            <Button variant="secondary" className="h-7 px-2" onClick={() => setRuns(10)} disabled={loading}>
+            <Button
+              variant="secondary"
+              className="h-7 px-2"
+              onClick={() => setRuns(10)}
+              disabled={loading}
+            >
               10
             </Button>
           </div>
         </div>
 
-        <Button onClick={runComparison} disabled={loading} className="w-full gap-2">
-          {loading ? <span className="animate-spin">⟳</span> : <Play className="w-4 h-4" />}
+        <Button
+          onClick={runComparison}
+          disabled={loading}
+          className="w-full gap-2"
+        >
+          {loading ? (
+            <span className="animate-spin">⟳</span>
+          ) : (
+            <Play className="w-4 h-4" />
+          )}
           Lancer la comparaison
         </Button>
 
@@ -284,14 +341,68 @@ export const ComparisonPanel = () => {
           <div className="space-y-4">
             <div className="p-3 rounded-lg border bg-muted/30">
               <div className="text-sm">{speed?.label}</div>
-              <div className="text-xs text-muted-foreground mt-1">REST moyen par requête: {formatMs(restAvgMs)}</div>
+              <div className="text-xs text-muted-foreground mt-1">
+                REST moyen par requête: {formatMs(restAvgMs)}
+              </div>
+            </div>
+
+            <div className="mt-6 space-y-2">
+              <h4 className="text-xs font-semibold uppercase text-muted-foreground">
+                Simulation du Waterfall Réseau
+              </h4>
+
+              {/* GraphQL Bar */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span>GraphQL (1 vol)</span>
+                  <span className="text-blue-400">
+                    {formatMs(result.graphql.duration)}
+                  </span>
+                </div>
+                <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-blue-500 transition-all duration-500"
+                    style={{
+                      width: `${
+                        (result.graphql.duration / result.rest.duration) * 100
+                      }%`,
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* REST Bars (Visualizing the sequential pain) */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span>
+                    REST ({comparison.restEndpoints.length} segments
+                    séquentiels)
+                  </span>
+                  <span className="text-red-400">
+                    {formatMs(result.rest.duration)}
+                  </span>
+                </div>
+                <div className="flex h-1.5 w-full gap-0.5">
+                  {comparison.restEndpoints.map((_, i) => (
+                    <div
+                      key={i}
+                      className="h-full bg-red-500/60 rounded-sm"
+                      style={{
+                        width: `${100 / comparison.restEndpoints.length}%`,
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
                 <div className="flex items-center gap-2 mb-2">
                   <Zap className="w-4 h-4 text-blue-400" />
-                  <span className="text-sm font-medium text-blue-400">GraphQL</span>
+                  <span className="text-sm font-medium text-blue-400">
+                    GraphQL
+                  </span>
                 </div>
                 <div className="space-y-1 text-sm">
                   <div className="flex justify-between">
@@ -333,27 +444,37 @@ export const ComparisonPanel = () => {
 
             <div className="grid grid-cols-2 gap-2">
               <div className="text-center p-3 rounded-lg border bg-muted/30">
-                <div className="text-xs text-muted-foreground mb-1">Diff temps (vs REST)</div>
-                <Badge variant="secondary" className={timeDiff >= 0 ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}>
+                <div className="text-xs text-muted-foreground mb-1">
+                  Diff temps (vs REST)
+                </div>
+                <Badge
+                  variant="secondary"
+                  className={
+                    timeDiff >= 0
+                      ? "bg-green-500/20 text-green-300"
+                      : "bg-red-500/20 text-red-300"
+                  }
+                >
                   {timeDiff >= 0 ? `-${timeDiff}%` : `+${Math.abs(timeDiff)}%`}
                 </Badge>
               </div>
               <div className="text-center p-3 rounded-lg border bg-muted/30">
-                <div className="text-xs text-muted-foreground mb-1">Diff payload (vs REST)</div>
-                <Badge variant="secondary" className={payloadDiff >= 0 ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}>
-                  {payloadDiff >= 0 ? `-${payloadDiff}%` : `+${Math.abs(payloadDiff)}%`}
+                <div className="text-xs text-muted-foreground mb-1">
+                  Diff payload (vs REST)
+                </div>
+                <Badge
+                  variant="secondary"
+                  className={
+                    payloadDiff >= 0
+                      ? "bg-green-500/20 text-green-300"
+                      : "bg-red-500/20 text-red-300"
+                  }
+                >
+                  {payloadDiff >= 0
+                    ? `-${payloadDiff}%`
+                    : `+${Math.abs(payloadDiff)}%`}
                 </Badge>
               </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground">Avantage relatif</span>
-                <span className={speed?.winner === 'graphql' ? 'text-blue-300' : 'text-red-300'}>
-                  {speed?.winner === 'graphql' ? 'GraphQL devant' : 'REST devant'}
-                </span>
-              </div>
-              <Progress value={progressValue} className="h-2" />
             </div>
           </div>
         )}

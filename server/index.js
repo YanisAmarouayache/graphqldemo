@@ -30,7 +30,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // --------------------
 // HARD-CODED SETTINGS
 // --------------------
-const REST_LATENCY_MS = Number(process.env.REST_LATENCY_MS || 80);
+const REST_LATENCY_MS = Number(process.env.REST_LATENCY_MS || 0);
 const REST_CPU_MS = Number(process.env.REST_CPU_MS || 0);
 const USE_DATALOADER =
   String(process.env.USE_DATALOADER ?? "true").toLowerCase() !== "false";
@@ -164,6 +164,12 @@ async function startServer() {
               unitsById: new DataLoader(async (unitIds) => {
                 const map = await unitRepository.getUnitsByIds(unitIds);
                 return unitIds.map((id) => map.get(id) ?? null);
+              }),
+              equipmentByUnitId: new DataLoader(async (unitIds) => {
+                const map = await equipmentRepository.getEquipmentByUnitIds(
+                  unitIds
+                );
+                return unitIds.map((id) => map.get(id) || []);
               }),
             }
           : null;

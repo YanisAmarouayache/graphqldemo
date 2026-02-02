@@ -100,6 +100,34 @@ export class EquipmentRepository {
     return result.rows.map((row) => this.mapEquipmentFromDB(row));
   }
 
+  async getEquipmentByUnitIds(unitIds) {
+    if (unitIds.length === 0) return new Map();
+
+    // We JOIN with soldiers to find which unit the equipment belongs to
+    const result = await query(
+      `
+      SELECT e.*, s.unit_id
+      FROM equipment e
+      JOIN soldiers s ON e.assigned_to = s.id
+      WHERE s.unit_id = ANY($1)
+      ORDER BY e.id
+      `,
+      [unitIds]
+    );
+
+    // Grouping results by unit_id
+    const map = new Map();
+    unitIds.forEach((id) => map.set(id, []));
+
+    result.rows.forEach((row) => {
+      const unitId = row.unit_id;
+      // We reuse the existing mapper
+      map.get(unitId).push(this.mapEquipmentFromDB(row));
+    });
+
+    return map;
+  }
+
   // Mapping function
   mapEquipmentFromDB(row) {
     return {

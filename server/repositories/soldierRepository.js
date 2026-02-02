@@ -104,6 +104,31 @@ export class SoldierRepository {
     return equipmentMap;
   }
 
+  async getSoldiersByUnitIds(unitIds) {
+    if (unitIds.length === 0) return new Map();
+
+    const result = await query(
+      `
+    SELECT s.*
+    FROM soldiers s
+    WHERE s.unit_id = ANY($1)
+    ORDER BY s.id
+    `,
+      [unitIds]
+    );
+
+    const map = new Map();
+    for (const unitId of unitIds) {
+      map.set(unitId, []);
+    }
+
+    for (const row of result.rows) {
+      map.get(row.unit_id).push(this.mapSoldierFromDB(row));
+    }
+
+    return map;
+  }
+
   // Mapping functions
   mapSoldierFromDB(row) {
     return {
