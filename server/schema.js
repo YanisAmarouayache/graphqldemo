@@ -1,4 +1,4 @@
-import gql from 'graphql-tag';
+import gql from "graphql-tag";
 
 export const typeDefs = gql`
   scalar Time
@@ -44,6 +44,7 @@ export const typeDefs = gql`
     CBRN_EVENT
     ACCIDENT
     EXPLOSION
+    MANUAL_ALERT # Ajouté pour correspondre au type de votre mutation
   }
 
   type Point {
@@ -94,12 +95,12 @@ export const typeDefs = gql`
 
   type TacticalEvent {
     id: ID!
-    type: EventCategoryCode!
-    location: Point!
+    type: String! # Changé en String pour accepter "MANUAL_ALERT" plus facilement
+    location: Point # Optionnel pour les alertes manuelles globales
     timestamp: Time!
     severity: Int!
     description: String!
-    involvedUnits: [ID!]!
+    involvedUnits: [ID!]
   }
 
   type PageInfo {
@@ -183,6 +184,9 @@ export const typeDefs = gql`
     createUnit(input: CreateUnitInput!): CreateUnitPayload!
     updateUnit(input: UpdateUnitInput!): UpdateUnitPayload!
     updateUnitLocation(id: ID!, location: PointInput!): Unit!
+
+    # --- LA LIGNE MANQUANTE ---
+    fireAlert(severity: Int, description: String): TacticalEvent!
   }
 
   type Subscription {

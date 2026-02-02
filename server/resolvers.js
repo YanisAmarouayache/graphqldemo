@@ -6,7 +6,6 @@ import {
   tacticalEventRepository,
 } from "./repositories/index.js";
 
-// Topics (importés par server/index.js aussi)
 export const TOPICS = {
   UNIT_LOCATION_UPDATED: "UNIT_LOCATION_UPDATED",
   TACTICAL_EVENT_CREATED: "TACTICAL_EVENT_CREATED",
@@ -15,45 +14,35 @@ export const TOPICS = {
   UNIT_UPDATED: "UNIT_UPDATED",
 };
 
-// Toggle for demo (N+1 vs DataLoader batching)
 const USE_DATALOADER =
   String(process.env.USE_DATALOADER ?? "true").toLowerCase() !== "false";
-
-// WOW mode: par défaut pas de spam; active avec DEMO_SPAM=true
 const DEMO_SPAM =
-  String(process.env.DEMO_SPAM ?? "false").toLowerCase() === "true";
+  String(process.env.DEMO_SPAM ?? "true").toLowerCase() === "true";
 
-// Apollo: Subscription.subscribe doit retourner un AsyncIterator. [web:21]
 class SimplePubSub {
   constructor() {
-    this.subs = new Map(); // topic -> callbacks[]
+    this.subs = new Map();
   }
-
   publish(topic, payload) {
     const callbacks = this.subs.get(topic) || [];
     for (const cb of callbacks) cb(payload);
   }
-
   subscribe(topic, cb) {
     if (!this.subs.has(topic)) this.subs.set(topic, []);
     this.subs.get(topic).push(cb);
-
     return () => {
       const callbacks = this.subs.get(topic) || [];
       const idx = callbacks.indexOf(cb);
       if (idx >= 0) callbacks.splice(idx, 1);
     };
   }
-
   asyncIterator(topic) {
     const queue = [];
     let notify = null;
-
     const wait = () =>
       new Promise((resolve) => {
         notify = resolve;
       });
-
     const unsubscribe = this.subscribe(topic, (payload) => {
       queue.push(payload);
       if (notify) {
@@ -62,7 +51,6 @@ class SimplePubSub {
         n();
       }
     });
-
     return (async function* () {
       try {
         while (true) {
@@ -78,7 +66,6 @@ class SimplePubSub {
 
 export const pubsub = new SimplePubSub();
 
-// Simulate network delay (optional, for demo purposes)
 const simulateDelay = (ms = 0) => {
   if (ms === 0) return Promise.resolve();
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -90,73 +77,57 @@ export const resolvers = {
       await simulateDelay(5);
       return unitRepository.getUnits(filter || {}, first, after);
     },
-
     unit: async (_, { id }) => {
       await simulateDelay(2);
       return unitRepository.getUnitById(id);
     },
-
     allUnits: async () => {
       await simulateDelay(10);
       return unitRepository.getAllUnits();
     },
-
     soldiers: async (_, { unitId }) => {
       await simulateDelay(5);
       if (unitId) return soldierRepository.getSoldiersByUnitId(unitId);
       return soldierRepository.getAllSoldiers();
     },
-
     soldier: async (_, { id }) => {
       await simulateDelay(2);
       return soldierRepository.getSoldierById(id);
     },
-
-    equipment: async (_, { id }) => {
+    equipment: async (_, { id }, ctx) => {
       await simulateDelay(2);
       if (!USE_DATALOADER) {
-        // NAIVE REST-LIKE APPROACH (The "Before" for your demo)
-        console.log(`[REST-LIKE] Fetching equipment for unit ${unit.id}`);
-        return equipmentRepository.getUnitEquipment(unit.id);
+        return equipmentRepository.getUnitEquipment(id);
       }
-
-      // DEEP LOADER APPROACH (The "After")
-      return ctx.loaders.equipmentByUnitId.load(unit.id);
+      return ctx.loaders.equipmentByUnitId.load(id);
     },
-
     allEquipment: async () => {
       await simulateDelay(10);
       return equipmentRepository.getAllEquipment();
     },
-
     equipmentByType: async (_, { type }) => {
       await simulateDelay(5);
       return equipmentRepository.getEquipmentByType(type);
     },
-
     missions: async (_, { status }) => {
       await simulateDelay(10);
       if (status) return missionRepository.getMissionsByStatus(status);
       return missionRepository.getAllMissions();
     },
-
     mission: async (_, { id }) => {
       await simulateDelay(2);
       return missionRepository.getMissionById(id);
     },
-
     tacticalEvents: async (_, { severity }) => {
       await simulateDelay(10);
       if (severity !== undefined)
         return tacticalEventRepository.getTacticalEventsBySeverity(severity);
       return tacticalEventRepository.getAllTacticalEvents();
     },
-
     tacticalEvent: async (_, { id }) => {
       await simulateDelay(2);
       return tacticalEventRepository.getTacticalEventById(id);
     },
-
     dashboardStats: async () => {
       await simulateDelay(10);
       return unitRepository.getDashboardStats();
@@ -172,10 +143,8 @@ export const resolvers = {
       }
       return ctx.loaders.soldiersByUnitId.load(unit.id);
     },
-
     equipment: async (unit, _, ctx) => {
       const soldiers = await resolvers.Unit.soldiers(unit, _, ctx);
-
       if (!USE_DATALOADER) {
         const out = [];
         for (const s of soldiers) {
@@ -187,16 +156,13 @@ export const resolvers = {
         }
         return out;
       }
-
       const lists = await Promise.all(
         soldiers.map((s) => ctx.loaders.equipmentBySoldierId.load(s.id))
       );
       return lists.flat();
     },
-
     commander: async (unit) => {
       if (!unit.commander) return null;
-      // If commander is just an ID object, fetch full details
       if (unit.commander.id && !unit.commander.name) {
         return soldierRepository.getSoldierById(unit.commander.id);
       }
@@ -215,48 +181,29 @@ export const resolvers = {
     },
   },
 
-  Mission: {
-    units: async (mission) => {
-      return missionRepository.getMissionUnits(mission.id);
-    },
-  },
-
-  TacticalEvent: {
-    involvedUnits: async (event) => {
-      return tacticalEventRepository.getInvolvedUnitIds(event.id);
-    },
-  },
-
   Mutation: {
-    createUnit: async (_, { input }) => {
-      await simulateDelay(50);
-
-      const unit = await unitRepository.createUnit(input);
-
-      pubsub.publish(TOPICS.UNIT_CREATED, { unitCreated: unit });
-      return { unit };
-    },
-
-    updateUnit: async (_, { input }) => {
-      await simulateDelay(30);
-
-      const unit = await unitRepository.updateUnit(input.id, input);
-      if (!unit) throw new Error(`Unit with id ${input.id} not found`);
-
-      pubsub.publish(TOPICS.UNIT_UPDATED, { unitUpdated: unit });
-      return { unit };
-    },
-
     updateUnitLocation: async (_, { id, location }) => {
-      await simulateDelay(10);
-
       const unit = await unitRepository.updateUnitLocation(id, location);
-      if (!unit) throw new Error(`Unit with id ${id} not found`);
-
+      if (!unit) throw new Error(`Unit ${id} not found`);
       pubsub.publish(TOPICS.UNIT_LOCATION_UPDATED, {
         unitLocationUpdated: unit,
       });
       return unit;
+    },
+    // Déclencheur manuel pour l'overlay front-end
+    fireAlert: async (_, { severity, description }) => {
+      const event = {
+        id: crypto.randomUUID(),
+        type: "MILITARY",
+        severity: severity || 5,
+        description: description || "ALERTE MANUELLE",
+        timestamp: new Date().toISOString(),
+        location: { coordinates: [50, 50] },
+      };
+      pubsub.publish(TOPICS.TACTICAL_EVENT_CREATED, {
+        tacticalEventCreated: event,
+      });
+      return event;
     },
   },
 
@@ -264,71 +211,50 @@ export const resolvers = {
     unitLocationUpdated: {
       subscribe: () => pubsub.asyncIterator(TOPICS.UNIT_LOCATION_UPDATED),
     },
-
     tacticalEventCreated: {
       subscribe: () => pubsub.asyncIterator(TOPICS.TACTICAL_EVENT_CREATED),
     },
-
     dashboardStatsUpdated: {
       subscribe: () => pubsub.asyncIterator(TOPICS.DASHBOARD_STATS_UPDATED),
-    },
-
-    unitUpdated: {
-      subscribe: () => pubsub.asyncIterator(TOPICS.UNIT_UPDATED),
     },
   },
 };
 
-// --------------------
-// Simulateurs (désactivés par défaut)
-// --------------------
 if (DEMO_SPAM) {
-  console.log("[DEMO_SPAM] enabled: auto-publishing subscription events");
+  console.log("📡 [SIMULATEUR] Mode dispersion maximale activé");
 
-  // unitLocationUpdated auto
   setInterval(async () => {
     const units = await unitRepository.getAllUnits();
     if (units.length === 0) return;
 
-    const randomUnit = units[Math.floor(Math.random() * units.length)];
-    if (!randomUnit) return;
+    const unit = units[Math.floor(Math.random() * units.length)];
 
-    // Update location slightly
-    const newLocation = {
+    // On génère des mouvements qui traversent vraiment la carte
+    const newLoc = {
       coordinates: [
-        randomUnit.location.coordinates[0] + (Math.random() - 0.5) * 0.01,
-        randomUnit.location.coordinates[1] + (Math.random() - 0.5) * 0.01,
+        // On rebondit entre 0 et 100 avec une variation de +/- 15
+        Math.max(
+          0,
+          Math.min(
+            100,
+            (unit.location.coordinates[0] || 50) + (Math.random() - 0.5) * 30
+          )
+        ),
+        Math.max(
+          0,
+          Math.min(
+            100,
+            (unit.location.coordinates[1] || 50) + (Math.random() - 0.5) * 30
+          )
+        ),
       ],
     };
 
-    const updatedUnit = await unitRepository.updateUnitLocation(
-      randomUnit.id,
-      newLocation
-    );
-    if (updatedUnit) {
+    const updated = await unitRepository.updateUnitLocation(unit.id, newLoc);
+    if (updated) {
       pubsub.publish(TOPICS.UNIT_LOCATION_UPDATED, {
-        unitLocationUpdated: updatedUnit,
+        unitLocationUpdated: updated,
       });
     }
-  }, 1000);
-
-  // tacticalEventCreated auto
-  let tacticalIdx = 0;
-  setInterval(async () => {
-    const events = await tacticalEventRepository.getAllTacticalEvents();
-    if (events.length === 0) return;
-
-    const ev = events[tacticalIdx % events.length];
-    tacticalIdx++;
-
-    pubsub.publish(TOPICS.TACTICAL_EVENT_CREATED, { tacticalEventCreated: ev });
-  }, 5000);
-
-  // dashboardStatsUpdated auto
-  setInterval(async () => {
-    const stats = await unitRepository.getDashboardStats();
-    pubsub.publish(TOPICS.DASHBOARD_STATS_UPDATED, {
-      dashboardStatsUpdated: stats,
-    });
-  }, 3000);
+  }, 1200);
 }
