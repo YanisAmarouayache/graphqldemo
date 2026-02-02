@@ -1,35 +1,27 @@
-// server/resolvers.js (ESM) — FULL FILE
-
 import {
-  mockUnits,
-  mockSoldiers,
-  mockEquipment,
-  mockMissions,
-  mockTacticalEvents,
-  getUnitById,
-  getSoldierById,
-  getEquipmentById,
-  getMissionById,
-  getTacticalEventById,
-  getSoldiersByUnitId,
-  getEquipmentBySoldierId,
-  simulateRealtimeUpdate,
-} from './data.js';
+  unitRepository,
+  soldierRepository,
+  equipmentRepository,
+  missionRepository,
+  tacticalEventRepository,
+} from "./repositories/index.js";
 
 // Topics (importés par server/index.js aussi)
 export const TOPICS = {
-  UNIT_LOCATION_UPDATED: 'UNIT_LOCATION_UPDATED',
-  TACTICAL_EVENT_CREATED: 'TACTICAL_EVENT_CREATED',
-  DASHBOARD_STATS_UPDATED: 'DASHBOARD_STATS_UPDATED',
-  UNIT_CREATED: 'UNIT_CREATED',
-  UNIT_UPDATED: 'UNIT_UPDATED',
+  UNIT_LOCATION_UPDATED: "UNIT_LOCATION_UPDATED",
+  TACTICAL_EVENT_CREATED: "TACTICAL_EVENT_CREATED",
+  DASHBOARD_STATS_UPDATED: "DASHBOARD_STATS_UPDATED",
+  UNIT_CREATED: "UNIT_CREATED",
+  UNIT_UPDATED: "UNIT_UPDATED",
 };
 
 // Toggle for demo (N+1 vs DataLoader batching)
-const USE_DATALOADER = String(process.env.USE_DATALOADER ?? 'true').toLowerCase() !== 'false';
+const USE_DATALOADER =
+  String(process.env.USE_DATALOADER ?? "true").toLowerCase() !== "false";
 
 // WOW mode: par défaut pas de spam; active avec DEMO_SPAM=true
-const DEMO_SPAM = String(process.env.DEMO_SPAM ?? 'false').toLowerCase() === 'true';
+const DEMO_SPAM =
+  String(process.env.DEMO_SPAM ?? "false").toLowerCase() === "true";
 
 // Apollo: Subscription.subscribe doit retourner un AsyncIterator. [web:21]
 class SimplePubSub {
@@ -86,116 +78,81 @@ class SimplePubSub {
 
 export const pubsub = new SimplePubSub();
 
-// Simulate network delay
-const simulateDelay = (ms = 50) => new Promise((resolve) => setTimeout(resolve, ms));
+// Simulate network delay (optional, for demo purposes)
+const simulateDelay = (ms = 0) => {
+  if (ms === 0) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, ms));
+};
 
 export const resolvers = {
   Query: {
     units: async (_, { filter, first = 10, after }) => {
       await simulateDelay(5);
-
-      let filteredUnits = mockUnits;
-
-      if (filter?.status) filteredUnits = filteredUnits.filter((u) => u.status === filter.status);
-      if (filter?.search) {
-        const search = filter.search.toLowerCase();
-        filteredUnits = filteredUnits.filter((u) => u.name.toLowerCase().includes(search));
-      }
-
-      const startIndex = after ? parseInt(Buffer.from(after, 'base64').toString()) : 0;
-      const endIndex = startIndex + first;
-      const paginatedUnits = filteredUnits.slice(startIndex, endIndex);
-
-      return {
-        edges: paginatedUnits.map((unit, index) => ({
-          node: unit,
-          cursor: Buffer.from(String(startIndex + index + 1)).toString('base64'),
-        })),
-        pageInfo: {
-          hasNextPage: endIndex < filteredUnits.length,
-          endCursor: Buffer.from(String(endIndex)).toString('base64'),
-          totalCount: filteredUnits.length,
-        },
-      };
+      return unitRepository.getUnits(filter || {}, first, after);
     },
 
     unit: async (_, { id }) => {
       await simulateDelay(2);
-      return getUnitById(id) || null;
+      return unitRepository.getUnitById(id);
     },
 
     allUnits: async () => {
       await simulateDelay(10);
-      return mockUnits;
+      return unitRepository.getAllUnits();
     },
 
     soldiers: async (_, { unitId }) => {
       await simulateDelay(5);
-      if (unitId) return getSoldiersByUnitId(unitId);
-      return mockSoldiers;
+      if (unitId) return soldierRepository.getSoldiersByUnitId(unitId);
+      return soldierRepository.getAllSoldiers();
     },
 
     soldier: async (_, { id }) => {
       await simulateDelay(2);
-      return getSoldierById(id) || null;
+      return soldierRepository.getSoldierById(id);
     },
 
     equipment: async (_, { id }) => {
       await simulateDelay(2);
-      return getEquipmentById(id) || null;
+      return equipmentRepository.getEquipmentById(id);
     },
 
     allEquipment: async () => {
       await simulateDelay(10);
-      return mockEquipment;
+      return equipmentRepository.getAllEquipment();
     },
 
     equipmentByType: async (_, { type }) => {
       await simulateDelay(5);
-      return mockEquipment.filter((e) => e.type === type);
+      return equipmentRepository.getEquipmentByType(type);
     },
 
     missions: async (_, { status }) => {
       await simulateDelay(10);
-      if (status) return mockMissions.filter((m) => m.status === status);
-      return mockMissions;
+      if (status) return missionRepository.getMissionsByStatus(status);
+      return missionRepository.getAllMissions();
     },
 
     mission: async (_, { id }) => {
       await simulateDelay(2);
-      return getMissionById(id) || null;
+      return missionRepository.getMissionById(id);
     },
 
     tacticalEvents: async (_, { severity }) => {
       await simulateDelay(10);
-      if (severity !== undefined) return mockTacticalEvents.filter((e) => e.severity >= severity);
-      return mockTacticalEvents;
+      if (severity !== undefined)
+        return tacticalEventRepository.getTacticalEventsBySeverity(severity);
+      return tacticalEventRepository.getAllTacticalEvents();
     },
 
     tacticalEvent: async (_, { id }) => {
       await simulateDelay(2);
-      return getTacticalEventById(id) || null;
+      return tacticalEventRepository.getTacticalEventById(id);
     },
 
     dashboardStats: async () => {
       await simulateDelay(10);
-
-      return {
-        totalUnits: mockUnits.length,
-        activeUnits: mockUnits.filter((u) => u.status === 'ACTIVE').length,
-        totalSoldiers: mockSoldiers.length,
-        activeMissions: mockMissions.filter((m) => m.status === 'IN_PROGRESS').length,
-        recentEvents: mockTacticalEvents.filter((e) => {
-          const eventDate = new Date(e.timestamp);
-          const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-          return eventDate > dayAgo;
-        }).length,
-        equipmentStatus: {
-          operational: mockEquipment.filter((e) => e.status === 'ACTIVE').length,
-          maintenance: mockEquipment.filter((e) => e.status === 'MAINTENANCE').length,
-          deployed: mockEquipment.filter((e) => e.status === 'DEPLOYED').length,
-        },
-      };
+      return unitRepository.getDashboardStats();
     },
   },
 
@@ -204,7 +161,7 @@ export const resolvers = {
       if (!USE_DATALOADER) {
         ctx.counters.unitSoldiersCalls++;
         await simulateDelay(2);
-        return getSoldiersByUnitId(unit.id);
+        return soldierRepository.getSoldiersByUnitId(unit.id);
       }
       return ctx.loaders.soldiersByUnitId.load(unit.id);
     },
@@ -217,13 +174,26 @@ export const resolvers = {
         for (const s of soldiers) {
           ctx.counters.soldierEquipmentCalls++;
           await simulateDelay(1);
-          out.push(...getEquipmentBySoldierId(s.id));
+          out.push(
+            ...(await equipmentRepository.getEquipmentBySoldierId(s.id))
+          );
         }
         return out;
       }
 
-      const lists = await Promise.all(soldiers.map((s) => ctx.loaders.equipmentBySoldierId.load(s.id)));
+      const lists = await Promise.all(
+        soldiers.map((s) => ctx.loaders.equipmentBySoldierId.load(s.id))
+      );
       return lists.flat();
+    },
+
+    commander: async (unit) => {
+      if (!unit.commander) return null;
+      // If commander is just an ID object, fetch full details
+      if (unit.commander.id && !unit.commander.name) {
+        return soldierRepository.getSoldierById(unit.commander.id);
+      }
+      return unit.commander;
     },
   },
 
@@ -232,9 +202,21 @@ export const resolvers = {
       if (!USE_DATALOADER) {
         ctx.counters.soldierEquipmentCalls++;
         await simulateDelay(1);
-        return getEquipmentBySoldierId(soldier.id);
+        return equipmentRepository.getEquipmentBySoldierId(soldier.id);
       }
       return ctx.loaders.equipmentBySoldierId.load(soldier.id);
+    },
+  },
+
+  Mission: {
+    units: async (mission) => {
+      return missionRepository.getMissionUnits(mission.id);
+    },
+  },
+
+  TacticalEvent: {
+    involvedUnits: async (event) => {
+      return tacticalEventRepository.getInvolvedUnitIds(event.id);
     },
   },
 
@@ -242,32 +224,17 @@ export const resolvers = {
     createUnit: async (_, { input }) => {
       await simulateDelay(50);
 
-      const newUnit = {
-        id: `UNT-${String(mockUnits.length + 1).padStart(4, '0')}`,
-        name: input.name,
-        status: input.status,
-        location: input.location,
-        commander: null,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+      const unit = await unitRepository.createUnit(input);
 
-      mockUnits.push(newUnit);
-
-      pubsub.publish(TOPICS.UNIT_CREATED, { unitCreated: newUnit });
-      return { unit: newUnit };
+      pubsub.publish(TOPICS.UNIT_CREATED, { unitCreated: unit });
+      return { unit };
     },
 
     updateUnit: async (_, { input }) => {
       await simulateDelay(30);
 
-      const unit = getUnitById(input.id);
+      const unit = await unitRepository.updateUnit(input.id, input);
       if (!unit) throw new Error(`Unit with id ${input.id} not found`);
-
-      if (input.name) unit.name = input.name;
-      if (input.status) unit.status = input.status;
-      if (input.location) unit.location = input.location;
-      unit.updatedAt = new Date().toISOString();
 
       pubsub.publish(TOPICS.UNIT_UPDATED, { unitUpdated: unit });
       return { unit };
@@ -276,13 +243,12 @@ export const resolvers = {
     updateUnitLocation: async (_, { id, location }) => {
       await simulateDelay(10);
 
-      const unit = getUnitById(id);
+      const unit = await unitRepository.updateUnitLocation(id, location);
       if (!unit) throw new Error(`Unit with id ${id} not found`);
 
-      unit.location = location;
-      unit.updatedAt = new Date().toISOString();
-
-      pubsub.publish(TOPICS.UNIT_LOCATION_UPDATED, { unitLocationUpdated: unit });
+      pubsub.publish(TOPICS.UNIT_LOCATION_UPDATED, {
+        unitLocationUpdated: unit,
+      });
       return unit;
     },
   },
@@ -310,50 +276,52 @@ export const resolvers = {
 // Simulateurs (désactivés par défaut)
 // --------------------
 if (DEMO_SPAM) {
-  console.log('[DEMO_SPAM] enabled: auto-publishing subscription events');
+  console.log("[DEMO_SPAM] enabled: auto-publishing subscription events");
 
   // unitLocationUpdated auto
-  setInterval(() => {
-    const update = simulateRealtimeUpdate?.();
-    if (!update) return;
+  setInterval(async () => {
+    const units = await unitRepository.getAllUnits();
+    if (units.length === 0) return;
 
-    const unit = getUnitById(update.unitId);
-    if (!unit) return;
+    const randomUnit = units[Math.floor(Math.random() * units.length)];
+    if (!randomUnit) return;
 
-    pubsub.publish(TOPICS.UNIT_LOCATION_UPDATED, { unitLocationUpdated: unit });
+    // Update location slightly
+    const newLocation = {
+      coordinates: [
+        randomUnit.location.coordinates[0] + (Math.random() - 0.5) * 0.01,
+        randomUnit.location.coordinates[1] + (Math.random() - 0.5) * 0.01,
+      ],
+    };
+
+    const updatedUnit = await unitRepository.updateUnitLocation(
+      randomUnit.id,
+      newLocation
+    );
+    if (updatedUnit) {
+      pubsub.publish(TOPICS.UNIT_LOCATION_UPDATED, {
+        unitLocationUpdated: updatedUnit,
+      });
+    }
   }, 1000);
 
-  // tacticalEventCreated auto (fait tourner la liste existante)
+  // tacticalEventCreated auto
   let tacticalIdx = 0;
-  setInterval(() => {
-    if (mockTacticalEvents.length === 0) return;
-    const ev = mockTacticalEvents[tacticalIdx % mockTacticalEvents.length];
+  setInterval(async () => {
+    const events = await tacticalEventRepository.getAllTacticalEvents();
+    if (events.length === 0) return;
+
+    const ev = events[tacticalIdx % events.length];
     tacticalIdx++;
 
     pubsub.publish(TOPICS.TACTICAL_EVENT_CREATED, { tacticalEventCreated: ev });
   }, 5000);
 
   // dashboardStatsUpdated auto
-  setInterval(() => {
-    const equipmentStatus = {
-      operational: mockEquipment.filter((e) => e.status === 'ACTIVE').length,
-      maintenance: mockEquipment.filter((e) => e.status === 'MAINTENANCE').length,
-      deployed: mockEquipment.filter((e) => e.status === 'DEPLOYED').length,
-    };
-
+  setInterval(async () => {
+    const stats = await unitRepository.getDashboardStats();
     pubsub.publish(TOPICS.DASHBOARD_STATS_UPDATED, {
-      dashboardStatsUpdated: {
-        totalUnits: mockUnits.length,
-        activeUnits: mockUnits.filter((u) => u.status === 'ACTIVE').length,
-        totalSoldiers: mockSoldiers.length,
-        activeMissions: mockMissions.filter((m) => m.status === 'IN_PROGRESS').length,
-        recentEvents: mockTacticalEvents.filter((e) => {
-          const eventDate = new Date(e.timestamp);
-          const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-          return eventDate > dayAgo;
-        }).length,
-        equipmentStatus,
-      },
+      dashboardStatsUpdated: stats,
     });
   }, 3000);
 }
